@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🪐 Sub-Neptune Visualizer</title>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0a0f; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; overflow: hidden; }
+    #sidebar { width: 280px; min-width: 280px; background: #12121a; border-right: 1px solid #2a2a3a; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+    #sidebar h1 { font-size: 16px; color: #a0c4ff; margin-bottom: 8px; text-align: center; }
+    .section-label { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 1px; margin-top: 10px; margin-bottom: 2px; border-top: 1px solid #2a2a3a; padding-top: 8px; }
+    label { font-size: 12px; color: #aaa; display: block; margin-bottom: 2px; }
+    select, input[type=number] { width: 100%; background: #1e1e2e; border: 1px solid #3a3a5a; color: #e0e0e0; border-radius: 6px; padding: 5px 8px; font-size: 13px; margin-bottom: 6px; outline: none; }
+    input[type=range] { width: 100%; accent-color: #a0c4ff; cursor: pointer; margin-bottom: 6px; height: 6px; }
+    .range-label { display: flex; justify-content: space-between; font-size: 12px; color: #aaa; margin-bottom: 2px; }
+    .range-val { color: #a0c4ff; font-weight: 600; }
+    .toggle-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+    .toggle-btn { flex: 1; padding: 5px 4px; font-size: 11px; border-radius: 6px; border: 1px solid #3a3a5a; background: #1e1e2e; color: #aaa; cursor: pointer; text-align: center; transition: all 0.2s; user-select: none; }
+    .toggle-btn.on { background: #1a3a6a; border-color: #a0c4ff; color: #a0c4ff; }
+    .eye-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+    .eye-row label { font-size: 11px; margin-bottom: 1px; }
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+    .stat-card { background: #1e1e2e; border: 1px solid #2a2a3a; border-radius: 6px; padding: 6px 8px; text-align: center; }
+    .stat-label { font-size: 10px; color: #666; }
+    .stat-val { font-size: 12px; color: #a0c4ff; font-weight: 600; }
+    #status { font-size: 11px; color: #888; text-align: center; padding: 4px; min-height: 18px; margin-bottom: 4px; }
+    #main { flex: 1; position: relative; overflow: hidden; }
+    #plot { width: 100%; height: 100%; }
+    #loading-overlay { position: absolute; inset: 0; background: rgba(10,10,15,0.85); display: flex; align-items: center; justify-content: center; font-size: 18px; color: #a0c4ff; z-index: 100; pointer-events: none; }
+    #loading-overlay.hidden { display: none; }
+    .spinner { display: inline-block; width: 22px; height: 22px; border: 3px solid #3a3a5a; border-top-color: #a0c4ff; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 10px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div id="sidebar">
+  <h1>🪐 Sub-Neptune Visualizer</h1>
+  <div id="status">⏳ Loading data...</div>
+
+  <div class="section-label">Variable</div>
+  <label>Parameter</label>
+  <select id="varname">
+    <option value="press">press — Pressure (Pa)</option>
+    <option value="rho">rho — Density (kg/m³)</option>
+    <option value="vel1">vel1 — Vertical velocity</option>
+    <option value="vel2">vel2 — Horiz velocity 2</option>
+    <option value="vel3">vel3 — Horiz velocity 3</option>
+    <option value="H2O">H2O — Water vapor</option>
+    <option value="H2O_l_">H2O_l_ — Cloud liquid</option>
+    <option value="H2O_l_p_">H2O_l_p_ — Precip liquid</option>
+  </select>
+
+  <div class="section-label">Shape & Style</div>
+  <label>Shape</label>
+  <select id="shape">
+    <option value="Sphere">Sphere</option>
+    <option value="Cube">Cube</option>
+  </select>
+
+  <label>Colormap</label>
+  <select id="cmap">
+    <option value="Jet">Jet</option>
+    <option value="Viridis">Viridis</option>
+    <option value="Plasma">Plasma</option>
+    <option value="RdBu">RdBu</option>
+    <option value="Hot">Hot</option>
+    <option value="Electric">Electric</option>
+    <option value="Turbo">Turbo</option>
+    <option value="Greys">Greys</option>
+  </select>
+
+  <div class="range-label"><span>Opacity</span><span class="range-val" id="opacity-val">1.00</span></div>
+  <input type="range" id="opacity" min="0.1" max="1.0" step="0.05" value="1.0">
+
+  <div class="section-label">Color Scale</div>
+  <div class="range-label"><span>Min percentile</span><span class="range-val" id="pct-lo-val">2</span>%</div>
+  <input type="range" id="pct-lo" min="0" max="49" step="0.5" value="2">
+  <div class="range-label"><span>Max percentile</span><span class="range-val" id="pct-hi-val">98</span>%</div>
+  <input type="range" id="pct-hi" min="51" max="100" step="0.5" value="98">
+
+  <div class="section-label">Overlays</div>
+  <div class="toggle-row">
+    <div class="toggle-btn on" id="toggle-labels" onclick="toggleBtn(this)">Face Labels</div>
+    <div class="toggle-btn on" id="toggle-axis"   onclick="toggleBtn(this)">N/S Axis</div>
+    <div class="toggle-btn"   id="toggle-grid"   onclick="toggleBtn(this)">Grid</div>
+  </div>
+
+  <div class="section-label">Camera</div>
+  <label>View preset</label>
+  <select id="view-preset" onchange="applyPreset()">
+    <option value="default">Default</option>
+    <option value="front">Front</option>
+    <option value="back">Back</option>
+    <option value="left">Left</option>
+    <option value="right">Right</option>
+    <option value="north">North (Top)</option>
+    <option value="south">South (Bottom)</option>
+    <option value="iso">Isometric</option>
+  </select>
+
+  <div class="range-label"><span>Zoom</span><span class="range-val" id="zoom-val">1.0×</span></div>
+  <input type="range" id="zoom" min="0.3" max="3.0" step="0.1" value="1.0">
+
+  <label>Eye position (X / Y / Z)</label>
+  <div class="eye-row">
+    <div><label>X</label><input type="number" id="eye-x" value="1.8" step="0.1"></div>
+    <div><label>Y</label><input type="number" id="eye-y" value="1.5" step="0.1"></div>
+    <div><label>Z</label><input type="number" id="eye-z" value="1.6" step="0.1"></div>
+  </div>
+
+  <div class="section-label">Data Stats</div>
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-label">Min</div><div class="stat-val" id="stat-min">—</div></div>
+    <div class="stat-card"><div class="stat-label">Max</div><div class="stat-val" id="stat-max">—</div></div>
+    <div class="stat-card"><div class="stat-label">Mean</div><div class="stat-val" id="stat-mean">—</div></div>
+    <div class="stat-card"><div class="stat-label">Std</div><div class="stat-val" id="stat-std">—</div></div>
+  </div>
+</div>
+
+<div id="main">
+  <div id="loading-overlay"><span class="spinner"></span> Loading...</div>
+  <div id="plot"></div>
+</div>
+
+<script>
+// ── state ─────────────────────────────────────────────────────────────────────
+let dataCache = {};   // varname -> { ny, nx, flat: Float32Array }
+
+const PRESETS = {
+  default: {x:1.8, y:1.5,  z:1.6,  ux:0, uy:1, uz:0},
+  front:   {x:0,   y:0,    z:2.5,  ux:0, uy:1, uz:0},
+  back:    {x:0,   y:0,    z:-2.5, ux:0, uy:1, uz:0},
+  left:    {x:-2.5,y:0,    z:0,    ux:0, uy:1, uz:0},
+  right:   {x:2.5, y:0,    z:0,    ux:0, uy:1, uz:0},
+  north:   {x:0,   y:2.5,  z:0,    ux:0, uy:0, uz:-1},
+  south:   {x:0,   y:-2.5, z:0,    ux:0, uy:0, uz:1},
+  iso:     {x:1.8, y:1.8,  z:1.8,  ux:0, uy:1, uz:0},
+};
+
+const $         = id => document.getElementById(id);
+const getVal    = id => $(id).value;
+const getFloat  = id => parseFloat(getVal(id));
+const isOn      = id => $(id).classList.contains('on');
+const setStatus = msg => $('status').textContent = msg;
+function setLoading(on){ $('loading-overlay').classList.toggle('hidden', !on); }
+function toggleBtn(el) { el.classList.toggle('on'); updatePlot(); }
+function applyPreset() {
+  const p = PRESETS[getVal('view-preset')];
+  $('eye-x').value=p.x; $('eye-y').value=p.y; $('eye-z').value=p.z;
+  updatePlot();
+}
+
+function bindSlider(id, outId, suffix='', decimals=0) {
+  const el=$(id), out=$(outId);
+  const u = () => { out.textContent = parseFloat(el.value).toFixed(decimals)+suffix; };
+  el.addEventListener('input', u); u();
+}
+bindSlider('opacity','opacity-val','',2);
+bindSlider('pct-lo','pct-lo-val','%',1);
+bindSlider('pct-hi','pct-hi-val','%',1);
+bindSlider('zoom','zoom-val','×',1);
+
+['varname','shape','cmap','opacity','pct-lo','pct-hi','zoom','eye-x','eye-y','eye-z'].forEach(id => {
+  const el=$(id);
+  el.addEventListener('change', updatePlot);
+  if (el.type==='range') el.addEventListener('input', updatePlot);
+});
+
+// ── load binary file ──────────────────────────────────────────────────────────
+// Format: 8 bytes header (int32 ny, int32 nx) + ny*nx float32 values
+async function loadBin(varname) {
+  if (dataCache[varname]) return dataCache[varname];
+
+  const resp = await fetch(`planet_bin/${varname}.bin`);
+  if (!resp.ok) throw new Error(`Could not load ${varname}.bin`);
+  const buf  = await resp.arrayBuffer();
+
+  // read header
+  const header = new Int32Array(buf, 0, 2);
+  const ny = header[0], nx = header[1];
+
+  // read float32 data — starts at byte 8
+  const flat = new Float32Array(buf, 8, ny * nx);
+
+  dataCache[varname] = {ny, nx, flat};
+  return dataCache[varname];
+}
+
+// ── get value at row r, col c from flat array ─────────────────────────────────
+// This is the key: we never convert to a 2D JS array (which would break layout)
+// Instead we index the flat Float32Array directly — same memory layout as numpy
+function getVal2d(flat, nx, r, c) { return flat[r * nx + c]; }
+
+// ── slice a panel directly from flat array → 2D JS array ─────────────────────
+function slicePanel(flat, nx, r0, r1, c0, c1) {
+  const out = [];
+  for (let r=r0; r<r1; r++) {
+    const row = [];
+    for (let c=c0; c<c1; c++) row.push(flat[r*nx + c]);
+    out.push(row);
+  }
+  return out;
+}
+
+// ── math helpers ──────────────────────────────────────────────────────────────
+function linspace(a, b, n) {
+  const arr = new Float64Array(n);
+  for (let i=0; i<n; i++) arr[i] = a + (b-a)*i/(n-1);
+  return arr;
+}
+
+function meshgrid(u, v) {
+  const nr=v.length, nc=u.length, H=[], W=[];
+  for (let r=0; r<nr; r++) {
+    H.push([]); W.push([]);
+    for (let c=0; c<nc; c++) { H[r].push(u[c]); W[r].push(v[r]); }
+  }
+  return [H, W];
+}
+
+function percentileFlat(flat, p) {
+  const arr = Array.from(flat).filter(isFinite).sort((a,b)=>a-b);
+  const idx = (p/100)*(arr.length-1);
+  const lo=Math.floor(idx), hi=Math.ceil(idx);
+  return arr[lo] + (arr[hi]-arr[lo])*(idx-lo);
+}
+
+function calcStatsFlat(flat) {
+  let min=Infinity, max=-Infinity, sum=0, n=0;
+  for (const v of flat) {
+    if (!isFinite(v)) continue;
+    if (v<min) min=v; if (v>max) max=v; sum+=v; n++;
+  }
+  const mean=sum/n; let variance=0;
+  for (const v of flat) { if (isFinite(v)) variance+=(v-mean)**2; }
+  return {min, max, mean, std:Math.sqrt(variance/n)};
+}
+
+function fmt(v) { return v.toExponential(3); }
+function scalarGrid(val,nr,nc){ return Array.from({length:nr},()=>new Array(nc).fill(val)); }
+function negGrid(g){ return g.map(row=>row.map(v=>-v)); }
+
+// ── rot90 — matches np.rot90 exactly ─────────────────────────────────────────
+function rot90(arr, k=1) {
+  let out=arr; k=((k%4)+4)%4;
+  for (let i=0; i<k; i++) {
+    const nr=out[0].length, nc=out.length;
+    const tmp=Array.from({length:nr},()=>new Array(nc));
+    for (let r=0; r<nr; r++)
+      for (let c=0; c<nc; c++)
+        tmp[r][c]=out[nc-1-c][r];
+    out=tmp;
+  }
+  return out;
+}
+
+function orientFace(face, rot){ return rot!==0 ? rot90(face,rot) : face; }
+
+// ── cube→sphere ───────────────────────────────────────────────────────────────
+function cubeToSphere(X,Y,Z){
+  const nr=X.length, nc=X[0].length, Xs=[],Ys=[],Zs=[];
+  for(let r=0;r<nr;r++){
+    Xs.push([]); Ys.push([]); Zs.push([]);
+    for(let c=0;c<nc;c++){
+      const L=Math.sqrt(X[r][c]**2+Y[r][c]**2+Z[r][c]**2);
+      Xs[r].push(X[r][c]/L); Ys[r].push(Y[r][c]/L); Zs[r].push(Z[r][c]/L);
+    }
+  }
+  return [Xs,Ys,Zs];
+}
+
+// ── surface trace builder ─────────────────────────────────────────────────────
+function makeSurface(X,Y,Z,panel,name,cmap,vmin,vmax,opacity,asSphere){
+  let Xp=X,Yp=Y,Zp=Z;
+  if(asSphere) [Xp,Yp,Zp]=cubeToSphere(X,Y,Z);
+  return {
+    type:'surface', x:Xp, y:Yp, z:Zp,
+    surfacecolor:panel, colorscale:cmap, cmin:vmin, cmax:vmax,
+    showscale:false, opacity:opacity, name:name,
+    lighting:{ambient:1,diffuse:0,specular:0,roughness:1},
+    hovertemplate:`${name}<br>value: %{surfacecolor:.3e}<extra></extra>`,
+  };
+}
+
+// ── main render ───────────────────────────────────────────────────────────────
+let renderTimeout=null;
+function updatePlot(){
+  clearTimeout(renderTimeout);
+  renderTimeout=setTimeout(_render, 80);
+}
+
+async function _render(){
+  setLoading(true);
+  try {
+    const varname    = getVal('varname');
+    const shape      = getVal('shape');
+    const cmap       = getVal('cmap');
+    const opacity    = getFloat('opacity');
+    const pctLo      = getFloat('pct-lo');
+    const pctHi      = getFloat('pct-hi');
+    const zoom       = getFloat('zoom');
+    const eyeX       = getFloat('eye-x');
+    const eyeY       = getFloat('eye-y');
+    const eyeZ       = getFloat('eye-z');
+    const showLabels = isOn('toggle-labels');
+    const showAxis   = isOn('toggle-axis');
+    const showGrid   = isOn('toggle-grid');
+    const asSphere   = shape==='Sphere';
+
+    setStatus(`⏳ Loading ${varname}...`);
+    const {ny, nx, flat} = await loadBin(varname);
+    const N = Math.floor(ny / 2);
+
+    // stats directly from flat Float32Array — no conversion needed
+    const vmin = percentileFlat(flat, pctLo);
+    const vmax = percentileFlat(flat, pctHi);
+    const s    = calcStatsFlat(flat);
+    $('stat-min').textContent  = fmt(s.min);
+    $('stat-max').textContent  = fmt(s.max);
+    $('stat-mean').textContent = fmt(s.mean);
+    $('stat-std').textContent  = fmt(s.std);
+
+    // ── extract panels directly from flat array ───────────────────────────────
+    // This mirrors the Python slicing exactly:
+    //   panels["north"] = data[0:N,   0:N  ]
+    //   panels["back"]  = data[0:N,   N:2N ]
+    //   panels["south"] = data[0:N,   2N:3N]
+    //   panels["left"]  = data[N:2N,  0:N  ]
+    //   panels["front"] = data[N:2N,  N:2N ]
+    //   panels["right"] = data[N:2N,  2N:3N]
+    const raw = {
+      north: slicePanel(flat, nx, 0, N,   0,   N),
+      back:  slicePanel(flat, nx, 0, N,   N,   2*N),
+      south: slicePanel(flat, nx, 0, N,   2*N, 3*N),
+      left:  slicePanel(flat, nx, N, 2*N, 0,   N),
+      front: slicePanel(flat, nx, N, 2*N, N,   2*N),
+      right: slicePanel(flat, nx, N, 2*N, 2*N, 3*N),
+    };
+
+    // ── orient faces — matches FACE_ORIENTATION in Python exactly ─────────────
+    const panels = {
+      north: orientFace(raw.north, -1),   // 90° CW
+      back:  orientFace(raw.back,   0),
+      south: orientFace(raw.south,  1),   // 90° CCW
+      left:  orientFace(raw.left,   0),
+      front: orientFace(raw.front,  0),
+      right: orientFace(raw.right,  0),
+    };
+
+    // ── face coordinate grids — matches Python exactly ────────────────────────
+    const u    = Array.from(linspace(-1,  1, N));
+    const vImg = Array.from(linspace( 1, -1, N));
+    const [H, W] = meshgrid(u, vImg);
+    const ones   = scalarGrid( 1, N, N);
+    const mones  = scalarGrid(-1, N, N);
+    const negH   = negGrid(H);
+    const negW   = negGrid(W);
+
+    // ── face placement — matches Python exactly ───────────────────────────────
+    const traces = [
+      makeSurface( H,     W,     ones,  panels.front,'Front', cmap,vmin,vmax,opacity,asSphere),
+      makeSurface( ones,  W,     negH,  panels.right,'Right', cmap,vmin,vmax,opacity,asSphere),
+      makeSurface( negH,  W,     mones, panels.back, 'Back',  cmap,vmin,vmax,opacity,asSphere),
+      makeSurface( mones, W,     H,     panels.left, 'Left',  cmap,vmin,vmax,opacity,asSphere),
+      makeSurface( H,     ones,  negW,  panels.north,'North', cmap,vmin,vmax,opacity,asSphere),
+      makeSurface( H,     mones, W,     panels.south,'South', cmap,vmin,vmax,opacity,asSphere),
+    ];
+
+    // colorbar
+    traces.push({
+      type:'surface', x:[[0,0],[0,0]], y:[[0,0],[0,0]], z:[[0,0],[0,0]],
+      surfacecolor:[[vmin,vmax],[vmin,vmax]],
+      colorscale:cmap, cmin:vmin, cmax:vmax,
+      showscale:true, opacity:0, hoverinfo:'skip',
+      colorbar:{title:{text:varname,font:{color:'white',size:13}},
+        thickness:18,len:0.6,tickfont:{color:'white'},x:1.0}
+    });
+
+    // cube edges
+    if (!asSphere) {
+      const corners=[[-1,-1,-1],[-1,-1,1],[-1,1,-1],[-1,1,1],[1,-1,-1],[1,-1,1],[1,1,-1],[1,1,1]];
+      for (const [i,j] of [[0,1],[0,2],[0,4],[3,1],[3,2],[3,7],[5,1],[5,4],[5,7],[6,2],[6,4],[6,7]]) {
+        const p0=corners[i], p1=corners[j];
+        traces.push({type:'scatter3d',x:[p0[0],p1[0]],y:[p0[1],p1[1]],z:[p0[2],p1[2]],
+          mode:'lines',line:{color:'white',width:2},hoverinfo:'skip',showlegend:false});
+      }
+    }
+
+    // N/S axis
+    if (showAxis) {
+      traces.push({type:'scatter3d',x:[0,0],y:[-1.4,1.4],z:[0,0],
+        mode:'lines',line:{color:'white',width:5},hoverinfo:'skip',showlegend:false});
+      traces.push({type:'scatter3d',x:[0,0],y:[-1.6,1.6],z:[0,0],
+        mode:'markers+text',marker:{size:5,color:'white'},
+        text:['S','N'],textposition:['bottom center','top center'],
+        textfont:{color:'white',size:18,family:'Arial Black'},
+        hoverinfo:'skip',showlegend:false});
+    }
+
+    // face labels
+    if (showLabels) {
+      traces.push({type:'scatter3d',
+        x:[0,0,-1.2,1.2,0,0], y:[0,0,0,0,1.2,-1.2], z:[1.2,-1.2,0,0,0,0],
+        mode:'text', text:['Front','Back','Left','Right','North','South'],
+        textfont:{color:'white',size:12,family:'Arial'},
+        hoverinfo:'skip',showlegend:false});
+    }
+
+    const presetKey = getVal('view-preset');
+    const upMap = {north:{x:0,y:0,z:-1}, south:{x:0,y:0,z:1}};
+    const up = upMap[presetKey] || {x:0,y:1,z:0};
+
+    const layout = {
+      title:{text:`Sub-Neptune — ${varname} | ${shape}`,
+        font:{color:'white',size:14},x:0.5,xanchor:'center'},
+      paper_bgcolor:'black', font:{color:'white'},
+      margin:{l:0,r:0,t:55,b:0},
+      scene:{
+        xaxis:{visible:showGrid,range:[-1,1],autorange:false,showgrid:showGrid,zeroline:false},
+        yaxis:{visible:showGrid,range:[-1,1],autorange:false,showgrid:showGrid,zeroline:false},
+        zaxis:{visible:showGrid,range:[-1,1],autorange:false,showgrid:showGrid,zeroline:false},
+        aspectmode:'cube', bgcolor:'black',
+        camera:{eye:{x:eyeX/zoom,y:eyeY/zoom,z:eyeZ/zoom},up:up}
+      },
+      showlegend:false,
+    };
+
+    Plotly.react('plot', traces, layout, {responsive:true});
+    setStatus(`✅ ${varname} | ${shape}`);
+
+  } catch(err) {
+    setStatus(`❌ ${err.message}`);
+    console.error(err);
+  } finally {
+    setLoading(false);
+  }
+}
+
+// load first variable on startup
+_render();
+</script>
+</body>
+</html>
